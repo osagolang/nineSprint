@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -31,8 +32,13 @@ func Generator(ctx context.Context, ch chan<- int64, fn func(int64)) {
 func Worker(in <-chan int64, out chan<- int64) {
 	// 2. Функция Worker
 	defer close(out)
-	for v := range in {
+	for {
+		v, ok := <-in
+		if !ok {
+			break
+		}
 		out <- v
+		time.Sleep(1 * time.Millisecond)
 	}
 }
 
@@ -49,8 +55,8 @@ func main() {
 
 	// генерируем числа, считая параллельно их количество и сумму
 	go Generator(ctx, chIn, func(i int64) {
-		inputSum += i
-		inputCount++
+		atomic.AddInt64(&inputSum, i)
+		atomic.AddInt64(&inputCount, 1)
 	})
 
 	const NumOut = 5 // количество обрабатывающих горутин и каналов
@@ -75,7 +81,7 @@ func main() {
 		go func(i int) {
 			defer wg.Done()
 			for v := range outs[i] {
-				amounts[i]++
+				atomic.AddInt64(&amounts[i], 1)
 				chOut <- v
 			}
 		}(i)
@@ -97,8 +103,8 @@ func main() {
 		sum += v
 	}
 
-	fmt.Println("Количество чисел", inputCount, count)
-	fmt.Println("Сумма чисел", inputSum, sum)
+	fmt.Println("Количество чисел", atomic.LoadInt64(&inputCount), count)
+	fmt.Println("Сумма чисел", atomic.LoadInt64(&inputSum), sum)
 	fmt.Println("Разбивка по каналам", amounts)
 
 	// проверка результатов
